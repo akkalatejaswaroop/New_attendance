@@ -4,7 +4,14 @@ import { cookies } from "next/headers";
 import { query } from "@/lib/db";
 
 export type Role = "hod" | "faculty" | "student";
-export type AuthUser = { id: string; email: string; role: Role; student_id: string | null; faculty_id: string | null };
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: Role;
+  student_id: string | null;
+  faculty_id: string | null;
+  must_change_password: boolean;
+};
 
 const COOKIE = "campus_attend_session";
 const secret = () => {
@@ -33,9 +40,9 @@ export async function currentUser(): Promise<AuthUser | null> {
     const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
     const id = String(payload.sub || "");
     if (!id) return null;
-    // Fetch current role/status on every request so role revocation takes effect.
+    // Read current database state on every request so revocation and password policy changes take effect immediately.
     const result = await query<AuthUser & { active: boolean }>(
-      `SELECT id, email, role, student_id, faculty_id, active
+      `SELECT id, email, role, student_id, faculty_id, active, must_change_password
        FROM public.campus_users WHERE id = $1 LIMIT 1`, [id]
     );
     const user = result.rows[0];
@@ -48,6 +55,7 @@ export async function currentUser(): Promise<AuthUser | null> {
 export async function requireRole(roles: Role[]) {
   const user = await currentUser();
   if (!user) throw new AuthError(401, "Authentication required");
+  if (user.must_change_password) throw new AuthError(403, "Password change required");
   if (!roles.includes(user.role)) throw new AuthError(403, "Insufficient permissions");
   return user;
 }
