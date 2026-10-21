@@ -1,4 +1,4 @@
--- CampusAttend workflow expansion (additive; safe to re-run).
+-- CampusAttend workflow expansion (additive and safe to re-run).
 -- Apply to the same Neon database used by the deployed application.
 CREATE TABLE IF NOT EXISTS public.campus_leave_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
