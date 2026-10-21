@@ -429,17 +429,6 @@ export async function POST(request: Request) {
         await query(`UPDATE public.campus_fines SET status='cancelled',resolved_by=$2,resolution_note='Attendance corrected: '||$3,resolved_at=now()
           WHERE student_id=$1 AND absent_date=($4::timestamptz AT TIME ZONE 'Asia/Kolkata')::date AND status='unpaid'`,
           [v.student_id,user.id,v.reason,session.opens_at]);
-      } else {
-        const dateResult = await query(`SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date AS d`, [session.opens_at]);
-        const settingResult = await query(`SELECT setting_value FROM public.campus_settings WHERE setting_key='absence_fine_per_day'`);
-        const amountPaise = Math.round(Number(settingResult.rows[0]?.setting_value?.amount ?? 50) * 100);
-        await query(`INSERT INTO public.campus_fines(student_id,absent_date,amount_paise,reason,source_session_id,created_by)
-          VALUES($1,$2::date,$3,'Unexcused absence',$4,$5)
-          ON CONFLICT(student_id,absent_date) DO UPDATE SET amount_paise=excluded.amount_paise,
-            status='unpaid',reason='Unexcused absence',source_session_id=excluded.source_session_id,
-            created_by=excluded.created_by,resolved_by=NULL,resolution_note=NULL,resolved_at=NULL
-          WHERE public.campus_fines.status='cancelled'`,
-          [v.student_id,dateResult.rows[0].d,amountPaise,v.session_id,user.id]);
       }
       return Response.json({ attendance: result.rows[0] });
     }
@@ -533,25 +522,23 @@ export async function POST(request: Request) {
             SELECT 1 FROM public.campus_leave_requests l
             WHERE l.student_id=st.id AND l.status='approved' AND l.from_date <= $2::date AND l.to_date >= $2::date
           )
-          AND (
-            NOT EXISTS (
-              SELECT 1 FROM public.campus_timetable t
-              WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
-                AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
-                AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
-            )
-            OR NOT EXISTS (
-              SELECT 1 FROM public.campus_timetable t
-              WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
-                AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
-                AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
-                AND NOT EXISTS (
-                  SELECT 1 FROM public.campus_sessions sx
-                  WHERE sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
-                    AND sx.subject_code=t.subject_code
-                    AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date AND sx.status='closed'
-                )
-            )
+          AND EXISTS (
+            SELECT 1 FROM public.campus_timetable t
+            WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
+              AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
+              AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM public.campus_timetable t
+            WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
+              AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
+              AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
+              AND NOT EXISTS (
+                SELECT 1 FROM public.campus_sessions sx
+                WHERE sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
+                  AND sx.subject_code=t.subject_code
+                  AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date AND sx.status='closed'
+              )
           )
         ON CONFLICT(student_id,absent_date) DO NOTHING`,
         [session.id,absentDate.rows[0].d,finePaise,user.id,session.year,session.section,session.dept]);
