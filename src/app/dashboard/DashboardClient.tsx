@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 
 type Data = {
@@ -234,5 +234,67 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
 }
 
 function SessionCards({ sessions, onMark, busy }: { sessions: Session[]; onMark: (event: FormEvent<HTMLFormElement>, id: string) => void; busy: boolean }) {
-  return <div className="session-list">{sessions.map(s=><div className="session-card" key={s.id}><div><strong>{s.subject_code}</strong><p>Year {s.year} {s.section} · {s.classroom_name || "Classroom"}</p><span className="small">Closes {dateText(s.closes_at)}</span></div><form onSubmit={e=>onMark(e,s.id)}><label>Live QR token<input name="qr_token" minLength={20} required placeholder="Paste token from classroom QR" /></label><button disabled={busy}>Mark present</button></form></div>)}{!sessions.length&&<p>No live attendance sessions are available for your class right now.</p>}</div>;
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [scanFor, setScanFor] = useState<string | null>(null);
+  const [scanError, setScanError] = useState("");
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!scanFor) return;
+    let stream: MediaStream | null = null;
+    let stopped = false;
+    const Detector = (window as unknown as { BarcodeDetector?: new (options: { formats: string[] }) => { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
+    if (!Detector) {
+      setScanError("QR scanning is not supported in this browser. Paste the token shown when scanning the classroom QR.");
+      setScanFor(null);
+      return;
+    }
+    const detector = new Detector({ formats: ["qr_code"] });
+    const start = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        const scan = async () => {
+          if (stopped || !videoRef.current) return;
+          try {
+            const codes = await detector.detect(videoRef.current);
+            const token = codes.find(code => code.rawValue)?.rawValue;
+            if (token) {
+              setTokens(previous => ({ ...previous, [scanFor]: token }));
+              setScanError("");
+              setScanFor(null);
+              return;
+            }
+          } catch { /* Continue scanning the next video frame. */ }
+          if (!stopped) requestAnimationFrame(() => { void scan(); });
+        };
+        requestAnimationFrame(() => { void scan(); });
+      } catch {
+        setScanError("Camera access failed. Allow camera permission or paste the token manually.");
+        setScanFor(null);
+      }
+    };
+    void start();
+    return () => {
+      stopped = true;
+      stream?.getTracks().forEach(track => track.stop());
+    };
+  }, [scanFor]);
+
+  return <div className="session-list">
+    {scanError && <p className="notice">{scanError}</p>}
+    {sessions.map(s=><div className="session-card" key={s.id}>
+      <div><strong>{s.subject_code}</strong><p>Year {s.year} {s.section} · {s.classroom_name || "Classroom"}</p><span className="small">Closes {dateText(s.closes_at)}</span></div>
+      <form onSubmit={e=>onMark(e,s.id)}>
+        <label>Live QR token<input name="qr_token" value={tokens[s.id] || ""} onChange={e=>setTokens(previous=>({...previous,[s.id]:e.target.value}))} minLength={20} required placeholder="Scan QR or paste token" /></label>
+        {scanFor === s.id && <video ref={videoRef} className="qr-camera" autoPlay playsInline muted aria-label="Camera scanning the classroom attendance QR" />}
+        <div className="action-list"><button type="button" className="secondary-button" onClick={()=>{setScanError("");setScanFor(scanFor===s.id?null:s.id);}} disabled={busy}>{scanFor===s.id?"Stop scanner":"Scan QR with camera"}</button><button disabled={busy}>Mark present</button></div>
+      </form>
+    </div>)}
+    {!sessions.length&&<p>No live attendance sessions are available for your class right now.</p>}
+  </div>;
 }
