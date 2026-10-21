@@ -21,7 +21,8 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [qr, setQr] = useState<{ id: string; token: string; expires: string; image: string } | null>(null);\n  const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
+  const [qr, setQr] = useState<{ id: string; token: string; expires: string; image: string } | null>(null);
+  const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
   const [fineAmount, setFineAmount] = useState("50");
 
   const refresh = useCallback(async () => {
