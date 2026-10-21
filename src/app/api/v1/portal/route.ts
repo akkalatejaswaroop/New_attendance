@@ -214,7 +214,7 @@ export async function POST(request: Request) {
       const parsed = reviewLeaveSchema.safeParse(body);
       if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid review" }, { status: 400 });
       const v = parsed.data;
-      const requestRow = await query(`SELECT l.id,l.student_id,s.year,s.section,s.dept,l.status
+      const requestRow = await query(`SELECT l.id,l.student_id,l.from_date,l.to_date,s.year,s.section,s.dept,l.status
         FROM public.campus_leave_requests l JOIN public.students s ON s.id=l.student_id WHERE l.id=$1`, [v.id]);
       const row = requestRow.rows[0];
       if (!row || row.status !== "pending") return Response.json({ error: "Leave request not found or already reviewed" }, { status: 409 });
@@ -225,6 +225,18 @@ export async function POST(request: Request) {
       }
       const updated = await query(`UPDATE public.campus_leave_requests SET status=$2,reviewed_by=$3,review_note=$4,reviewed_at=now(),updated_at=now()
         WHERE id=$1 AND status='pending' RETURNING id,status`, [v.id,v.status,user.id,v.review_note]);
+      if (v.status === "approved") {
+        await query(`UPDATE public.campus_attendance a SET status='excused',verification_method='admin_correction',
+            corrected_by=$2,correction_reason=COALESCE(NULLIF($3,''),'Approved leave'),marked_at=now()
+          FROM public.campus_sessions s
+          WHERE a.session_id=s.id AND a.student_id=$1
+            AND (s.opens_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $4::date AND $5::date`,
+          [row.student_id,user.id,v.review_note,row.from_date,row.to_date]);
+        await query(`UPDATE public.campus_fines SET status='cancelled',resolved_by=$2,
+            resolution_note='Approved leave',resolved_at=now()
+          WHERE student_id=$1 AND absent_date BETWEEN $3::date AND $4::date AND status='unpaid'`,
+          [row.student_id,user.id,row.from_date,row.to_date]);
+      }
       await query(`INSERT INTO public.campus_notifications(user_id,title,body,category)
         SELECT id,'Leave request reviewed',$2,'leave' FROM public.campus_users WHERE student_id=$1`,
         [row.student_id, `Your leave request was ${v.status}.`]);
@@ -308,6 +320,17 @@ export async function POST(request: Request) {
         await query(`UPDATE public.campus_fines SET status='cancelled',resolved_by=$2,resolution_note='Attendance corrected: '||$3,resolved_at=now()
           WHERE student_id=$1 AND absent_date=($4::timestamptz AT TIME ZONE 'Asia/Kolkata')::date AND status='unpaid'`,
           [v.student_id,user.id,v.reason,session.opens_at]);
+      } else {
+        const dateResult = await query(`SELECT ($1::timestamptz AT TIME ZONE 'Asia/Kolkata')::date AS d`, [session.opens_at]);
+        const settingResult = await query(`SELECT setting_value FROM public.campus_settings WHERE setting_key='absence_fine_per_day'`);
+        const amountPaise = Math.round(Number(settingResult.rows[0]?.setting_value?.amount ?? 50) * 100);
+        await query(`INSERT INTO public.campus_fines(student_id,absent_date,amount_paise,reason,source_session_id,created_by)
+          VALUES($1,$2::date,$3,'Unexcused absence',$4,$5)
+          ON CONFLICT(student_id,absent_date) DO UPDATE SET amount_paise=excluded.amount_paise,
+            status='unpaid',reason='Unexcused absence',source_session_id=excluded.source_session_id,
+            created_by=excluded.created_by,resolved_by=NULL,resolution_note=NULL,resolved_at=NULL
+          WHERE public.campus_fines.status='cancelled'`,
+          [v.student_id,dateResult.rows[0].d,amountPaise,v.session_id,user.id]);
       }
       return Response.json({ attendance: result.rows[0] });
     }
