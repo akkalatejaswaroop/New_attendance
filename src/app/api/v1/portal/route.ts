@@ -204,6 +204,10 @@ export async function GET() {
           present: attendance.rows.filter((a: any) => a.status === "present").length,
           absent: attendance.rows.filter((a: any) => a.status === "absent").length,
           attendanceRecords: attendance.rows.length,
+          attendancePercentage: attendance.rows.filter((a: any) => a.status === "present" || a.status === "absent").length
+            ? Math.round(100 * attendance.rows.filter((a: any) => a.status === "present").length /
+              attendance.rows.filter((a: any) => a.status === "present" || a.status === "absent").length)
+            : 0,
           fineBalancePaise: fines.rows.filter((f: any) => f.status === "unpaid").reduce((sum: number, f: any) => sum + Number(f.amount_paise), 0),
           pendingLeaves: leaves.rows.filter((l: any) => l.status === "pending").length
         }
