@@ -1,4 +1,7 @@
+export const dynamic = "force-dynamic";
+
 import { currentUser } from "@/lib/auth";
+
 export async function GET() {
   const user = await currentUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
