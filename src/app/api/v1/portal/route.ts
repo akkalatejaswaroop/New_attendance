@@ -193,6 +193,11 @@ export async function GET() {
                      FROM public.campus_class_assignments ca JOIN public.campus_users cu ON cu.id=ca.faculty_user_id
                      LEFT JOIN public.faculty f ON f.id=cu.faculty_id WHERE ca.active=true ORDER BY ca.year,ca.section,ca.subject_code`)
       : await query(`SELECT id,subject_code,year,section,dept FROM public.campus_class_assignments WHERE faculty_user_id=$1 AND active=true ORDER BY year,section,subject_code`, [user.id]);
+    const facultyUsers = user.role === "hod"
+      ? await query(`SELECT cu.id,cu.email,f.name,f.employee_code,f.department
+                     FROM public.campus_users cu LEFT JOIN public.faculty f ON f.id=cu.faculty_id
+                     WHERE cu.role='faculty' AND cu.active=true ORDER BY f.name,cu.email`)
+      : { rows: [] };
     const finePolicy = await query(`SELECT setting_value FROM public.campus_settings WHERE setting_key='absence_fine_per_day'`);
     const summary = user.role === "student"
       ? {
@@ -212,7 +217,7 @@ export async function GET() {
       user: { id: user.id, email: user.email, role: user.role, student_id: user.student_id, faculty_id: user.faculty_id },
       profile: profile.rows[0] || null, summary, attendance: attendance.rows, timetable: timetableResult.rows,
       leaves: leaves.rows, fines: fines.rows, notifications: notifications.rows,
-      classrooms: classrooms.rows, students: students.rows, assignments: assignments.rows,
+      classrooms: classrooms.rows, students: students.rows, assignments: assignments.rows, facultyUsers: facultyUsers.rows,
       finePerDayPaise: Number(finePolicy.rows[0]?.setting_value?.amount ?? 50) * 100,
       todayDayOfWeek: day
     });
