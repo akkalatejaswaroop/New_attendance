@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 
 type Data = {
@@ -80,7 +80,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
     finally { setBusy(false); }
   };
 
-  const markAttendance = async (event: React.FormEvent<HTMLFormElement>, sessionId: string) => {
+  const markAttendance = async (event: FormEvent<HTMLFormElement>, sessionId: string) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const token = String(form.get("qr_token") || "").trim();
@@ -105,7 +105,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
   };
 
-  const submitForm = async (event: React.FormEvent<HTMLFormElement>, action: string, transform?: (form: FormData) => Record<string, unknown>) => {
+  const submitForm = async (event: FormEvent<HTMLFormElement>, action: string, transform?: (form: FormData) => Record<string, unknown>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const payload = transform ? transform(form) : Object.fromEntries(form.entries());
@@ -218,6 +218,6 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
   </main>;
 }
 
-function SessionCards({ sessions, onMark, busy }: { sessions: Session[]; onMark: (event: React.FormEvent<HTMLFormElement>, id: string) => void; busy: boolean }) {
+function SessionCards({ sessions, onMark, busy }: { sessions: Session[]; onMark: (event: FormEvent<HTMLFormElement>, id: string) => void; busy: boolean }) {
   return <div className="session-list">{sessions.map(s=><div className="session-card" key={s.id}><div><strong>{s.subject_code}</strong><p>Year {s.year} {s.section} · {s.classroom_name || "Classroom"}</p><span className="small">Closes {dateText(s.closes_at)}</span></div><form onSubmit={e=>onMark(e,s.id)}><label>Live QR token<input name="qr_token" minLength={20} required placeholder="Paste token from classroom QR" /></label><button disabled={busy}>Mark present</button></form></div>)}{!sessions.length&&<p>No live attendance sessions are available for your class right now.</p>}</div>;
 }
