@@ -130,7 +130,9 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
     {tab === "Overview" && <>
       <section className="metric-grid">
         {(role === "student" ? [
-          ["Attendance records", data?.summary?.attendanceRecords ?? 0],
+          ["Attendance rate", `${data?.summary?.attendancePercentage ?? 0}%`],
+          ["Present sessions", data?.summary?.present ?? 0],
+          ["Recorded sessions", data?.summary?.attendanceRecords ?? 0],
           ["Present sessions", data?.summary?.present ?? 0],
           ["Pending leave", data?.summary?.pendingLeaves ?? 0],
           ["Outstanding fines", money(data?.summary?.fineBalancePaise ?? 0)]
