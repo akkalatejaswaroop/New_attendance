@@ -71,7 +71,7 @@ const sessionCreateSchema = z.object({
 export async function GET() {
   try {
     const user = await requireRole(["hod", "faculty", "student"]);
-    const [profile, attendance, timetable, leaves, fines, notifications] = await Promise.all([
+    const [profile, attendance, leaves, fines, notifications] = await Promise.all([
       user.role === "student" && user.student_id
         ? query(`SELECT id,roll_no,name,year,section,dept,phone,status FROM public.students WHERE id=$1`, [user.student_id])
         : user.role === "faculty" && user.faculty_id
