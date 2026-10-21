@@ -108,10 +108,11 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
 
   const submitForm = async (event: FormEvent<HTMLFormElement>, action: string, transform?: (form: FormData) => Record<string, unknown>) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const payload = transform ? transform(form) : Object.fromEntries(form.entries());
     const result = await send({ action, ...payload });
-    if (result) event.currentTarget.reset();
+    if (result) formElement.reset();
   };
 
   const unpaidTotal = useMemo(() => data?.fines.filter(f => f.status === "unpaid").reduce((n, f) => n + Number(f.amount_paise), 0) || 0, [data]);
@@ -189,7 +190,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
         <label>Roll number<input name="roll_no" required /></label><label>Full name<input name="name" required /></label><label>Year<select name="year">{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label><label>Section<input name="section" required defaultValue="A" /></label><label>Department<input name="dept" required defaultValue="CSE-AIML" /></label><label>Student email<input name="email" type="email" required /></label><label>Phone (optional)<input name="phone" /></label><button disabled={busy}>Create student login</button>
       </form></article>
       <article className="card"><h2>Import student roster</h2><p>Paste a JSON array with roll_no, name, year, section, dept, email and optional phone. Imports are transactional.</p>
-        <form onSubmit={async e => { e.preventDefault(); const form = new FormData(e.currentTarget); try { const rows = JSON.parse(String(form.get("rows") || "[]")); setBusy(true); const res = await fetch("/api/v1/students/import", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows})}); const r = await res.json(); if (!res.ok) throw new Error(r.error || "Import failed"); setNotice(`Imported ${r.imported} students. Student login accounts must be provisioned separately.`); await refresh(); e.currentTarget.reset(); } catch (err) { setNotice(err instanceof Error ? err.message : "Invalid JSON"); } finally { setBusy(false); } }}>
+        <form onSubmit={async e => { e.preventDefault(); const formElement = e.currentTarget; const form = new FormData(formElement); try { const rows = JSON.parse(String(form.get("rows") || "[]")); setBusy(true); const res = await fetch("/api/v1/students/import", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows})}); const r = await res.json(); if (!res.ok) throw new Error(r.error || "Import failed"); setNotice(`Imported ${r.imported} students. Student login accounts must be provisioned separately.`); await refresh(); formElement.reset(); } catch (err) { setNotice(err instanceof Error ? err.message : "Invalid JSON"); } finally { setBusy(false); } }}>
           <label>Student rows JSON<textarea name="rows" rows={8} required placeholder={'[{"roll_no":"24CS001","name":"Student Name","year":3,"section":"A","dept":"CSE-AIML","email":"student@example.edu"}]'} /></label><button disabled={busy}>Import students</button>
         </form>
       </article>
