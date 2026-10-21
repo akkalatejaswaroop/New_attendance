@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 type Data = {
   user: { id: string; email: string; role: "hod" | "faculty" | "student"; student_id: string | null; faculty_id: string | null };
   profile: any; summary: any; attendance: any[]; timetable: any[]; leaves: any[]; fines: any[];
-  notifications: any[]; classrooms: any[]; students: any[]; assignments: any[]; finePerDayPaise: number;
+  notifications: any[]; classrooms: any[]; students: any[]; assignments: any[]; facultyUsers: any[]; finePerDayPaise: number;
 };
 type Session = { id: string; subject_code: string; year: number; section: string; dept: string; opens_at: string; closes_at: string; status: string; classroom_name?: string };
 
@@ -21,7 +21,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [qr, setQr] = useState<{ id: string; token: string; expires: string; image: string } | null>(null);
+  const [qr, setQr] = useState<{ id: string; token: string; expires: string; image: string } | null>(null);\n  const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
   const [fineAmount, setFineAmount] = useState("50");
 
   const refresh = useCallback(async () => {
@@ -65,7 +65,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
     ? ["Overview", "Attendance", "Timetable", "Leave", "Fines", "Notifications"]
     : role === "faculty"
       ? ["Overview", "Sessions", "Classes", "Timetable", "Leave", "Attendance", "Notifications"]
-      : ["Overview", "Sessions", "Students", "Timetable", "Leave", "Fine management", "Classrooms", "Notifications"];
+      : ["Overview", "Sessions", "Students", "Faculty & access", "Timetable", "Leave", "Fine management", "Classrooms", "Notifications"];
 
   const openQr = async (sessionId: string) => {
     setBusy(true); setNotice("");
@@ -123,6 +123,7 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
       <form action="/api/v1/auth/logout" method="post"><button className="secondary-button" type="submit">Sign out</button></form>
     </div>
     {notice && <div className={notice.toLowerCase().includes("success") || notice.toLowerCase().includes("generated") ? "notice success" : "notice"} role="status">{notice}<button className="notice-close" onClick={() => setNotice("")} aria-label="Dismiss">×</button></div>}
+    {credential && <div className="credential-panel" role="status"><strong>New account created — share this temporary password securely once.</strong><p>Login email: <code>{credential.email}</code></p><p>Temporary password: <code>{credential.password}</code></p><p className="small">The user must change this password at first sign-in. It will not be shown again after you dismiss this panel.</p><div className="action-list"><button onClick={() => { void navigator.clipboard?.writeText(`Email: ${credential.email}\\nTemporary password: ${credential.password}`); setNotice("Temporary credentials copied."); }}>Copy credentials</button><button className="secondary-button" onClick={() => setCredential(null)}>Dismiss</button></div></div>}
     <nav className="dash-tabs" aria-label="Dashboard sections">{tabs.map(t => <button key={t} className={tab === t ? "tab active" : "tab"} onClick={() => { setTab(t); setQr(null); }}>{t}</button>)}</nav>
 
     {tab === "Overview" && <>
@@ -181,6 +182,9 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
     </section>}
 
     {tab === "Students" && <section className="cards">
+      <article className="card"><h2>Create student account</h2><p>Creates the student profile and login together. The temporary password is shown once.</p><form onSubmit={e => submitForm(e,"user.createStudent",f=>({roll_no:String(f.get("roll_no")),name:String(f.get("name")),year:Number(f.get("year")),section:String(f.get("section")),dept:String(f.get("dept")||"CSE-AIML"),email:String(f.get("email")),phone:String(f.get("phone")||"")}))}>
+        <label>Roll number<input name="roll_no" required /></label><label>Full name<input name="name" required /></label><label>Year<select name="year">{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label><label>Section<input name="section" required defaultValue="A" /></label><label>Department<input name="dept" required defaultValue="CSE-AIML" /></label><label>Student email<input name="email" type="email" required /></label><label>Phone (optional)<input name="phone" /></label><button disabled={busy}>Create student login</button>
+      </form></article>
       <article className="card"><h2>Import student roster</h2><p>Paste a JSON array with roll_no, name, year, section, dept, email and optional phone. Imports are transactional.</p>
         <form onSubmit={async e => { e.preventDefault(); const form = new FormData(e.currentTarget); try { const rows = JSON.parse(String(form.get("rows") || "[]")); setBusy(true); const res = await fetch("/api/v1/students/import", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({rows})}); const r = await res.json(); if (!res.ok) throw new Error(r.error || "Import failed"); setNotice(`Imported ${r.imported} students. Student login accounts must be provisioned separately.`); await refresh(); e.currentTarget.reset(); } catch (err) { setNotice(err instanceof Error ? err.message : "Invalid JSON"); } finally { setBusy(false); } }}>
           <label>Student rows JSON<textarea name="rows" rows={8} required placeholder={'[{"roll_no":"24CS001","name":"Student Name","year":3,"section":"A","dept":"CSE-AIML","email":"student@example.edu"}]'} /></label><button disabled={busy}>Import students</button>
@@ -191,9 +195,19 @@ export default function DashboardClient({ initialRole, initialEmail }: { initial
 
     {tab === "Classes" && <section className="card"><h2>Assigned classes</h2><div className="table-wrap"><table><thead><tr><th>Subject</th><th>Year</th><th>Section</th><th>Department</th></tr></thead><tbody>{data?.assignments.map(a => <tr key={a.id || a.subject_code}><td>{a.subject_code}</td><td>{a.year}</td><td>{a.section}</td><td>{a.dept}</td></tr>)}</tbody></table></div><h2>Class roster</h2><div className="table-wrap"><table><thead><tr><th>Roll number</th><th>Name</th><th>Class</th></tr></thead><tbody>{data?.students.map(s => <tr key={s.id}><td>{s.roll_no}</td><td>{s.name}</td><td>Year {s.year} {s.section}</td></tr>)}</tbody></table></div></section>}
 
+    {tab === "Faculty & access" && <section className="cards">
+      <article className="card"><h2>Create faculty account</h2><p>Creates a faculty profile and login with mandatory first-login password change.</p><form onSubmit={e=>submitForm(e,"user.createFaculty",f=>({name:String(f.get("name")),email:String(f.get("email")),employee_code:String(f.get("employee_code")||""),department:String(f.get("department")||"CSE-AIML")}))}>
+        <label>Faculty name<input name="name" required /></label><label>Faculty email<input type="email" name="email" required /></label><label>Employee code<input name="employee_code" /></label><label>Department<input name="department" defaultValue="CSE-AIML" required /></label><button disabled={busy}>Create faculty login</button>
+      </form></article>
+      <article className="card"><h2>Assign faculty to a class</h2><form onSubmit={e=>submitForm(e,"assignment.create",f=>({faculty_user_id:String(f.get("faculty_user_id")),subject_code:String(f.get("subject_code")),year:Number(f.get("year")),section:String(f.get("section")),dept:String(f.get("dept")||"CSE-AIML")}))}>
+        <label>Faculty<select name="faculty_user_id" required>{data?.facultyUsers.map(f=><option key={f.id} value={f.id}>{f.name || f.email} — {f.email}</option>)}</select></label><label>Subject code<input name="subject_code" required /></label><label>Year<select name="year">{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label><label>Section<input name="section" required defaultValue="A" /></label><label>Department<input name="dept" required defaultValue="CSE-AIML" /></label><button disabled={busy || !data?.facultyUsers.length}>Save class assignment</button>
+      </form>{!data?.facultyUsers.length&&<p className="small">Create a faculty account first.</p>}</article>
+      <article className="card wide"><h2>Current faculty assignments</h2><div className="table-wrap"><table><thead><tr><th>Faculty</th><th>Email</th><th>Subject</th><th>Class</th></tr></thead><tbody>{data?.assignments.map(a=><tr key={a.id}><td>{a.faculty_name || "Faculty"}</td><td>{a.email}</td><td>{a.subject_code}</td><td>Year {a.year} {a.section} · {a.dept}</td></tr>)}{!data?.assignments.length&&<tr><td colSpan={4}>No faculty assignments configured.</td></tr>}</tbody></table></div></article>
+    </section>}
+
     {tab === "Timetable" && <section className="cards">
       {role === "hod" && <article className="card"><h2>Add timetable slot</h2><form onSubmit={e => submitForm(e, "timetable.create", f => ({dept:String(f.get("dept") || "CSE-AIML"),year:Number(f.get("year")),section:String(f.get("section")),day_of_week:Number(f.get("day_of_week")),start_time:String(f.get("start_time")),end_time:String(f.get("end_time")),subject_code:String(f.get("subject_code")),subject_name:String(f.get("subject_name")),faculty_user_id:String(f.get("faculty_user_id") || "") || null,classroom_id:String(f.get("classroom_id") || "") || null}))}>
-        <label>Department<input name="dept" defaultValue="CSE-AIML" required /></label><label>Year<select name="year">{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label><label>Section<input name="section" required defaultValue="A" /></label><label>Day<select name="day_of_week">{dayNames.map((d,i)=><option value={i} key={d}>{d}</option>)}</select></label><label>Start<input type="time" name="start_time" required /></label><label>End<input type="time" name="end_time" required /></label><label>Subject code<input name="subject_code" required /></label><label>Subject name<input name="subject_name" required /></label><label>Faculty account<select name="faculty_user_id"><option value="">Unassigned</option>{data?.assignments.map(a=><option key={a.faculty_user_id} value={a.faculty_user_id}>{a.faculty_name || a.email}</option>)}</select></label><label>Classroom<select name="classroom_id"><option value="">Unassigned</option>{data?.classrooms.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><button disabled={busy}>Add timetable slot</button>
+        <label>Department<input name="dept" defaultValue="CSE-AIML" required /></label><label>Year<select name="year">{[1,2,3,4].map(n=><option key={n}>{n}</option>)}</select></label><label>Section<input name="section" required defaultValue="A" /></label><label>Day<select name="day_of_week">{dayNames.map((d,i)=><option value={i} key={d}>{d}</option>)}</select></label><label>Start<input type="time" name="start_time" required /></label><label>End<input type="time" name="end_time" required /></label><label>Subject code<input name="subject_code" required /></label><label>Subject name<input name="subject_name" required /></label><label>Faculty account<select name="faculty_user_id"><option value="">Unassigned</option>{data?.facultyUsers.map(f=><option key={f.id} value={f.id}>{f.name || f.email}</option>)}</select></label><label>Classroom<select name="classroom_id"><option value="">Unassigned</option>{data?.classrooms.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><button disabled={busy}>Add timetable slot</button>
       </form></article>}
       <article className="card wide"><h2>Weekly timetable</h2><div className="table-wrap"><table><thead><tr><th>Day</th><th>Time</th><th>Subject</th><th>Class</th><th>Faculty / Room</th></tr></thead><tbody>{data?.timetable.map(t=><tr key={t.id}><td>{dayNames[Number(t.day_of_week)]}</td><td>{String(t.start_time).slice(0,5)}–{String(t.end_time).slice(0,5)}</td><td>{t.subject_code} — {t.subject_name}</td><td>Year {t.year} {t.section}</td><td>{t.faculty_name || t.classroom_name || "—"}</td></tr>)}{!data?.timetable.length && <tr><td colSpan={5}>No timetable slots configured.</td></tr>}</tbody></table></div></article>
     </section>}
