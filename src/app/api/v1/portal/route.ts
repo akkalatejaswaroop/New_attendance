@@ -1,8 +1,39 @@
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { requireRole, apiError } from "@/lib/auth";
 import { pool, query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+const createStudentSchema = z.object({
+  action: z.literal("user.createStudent"),
+  roll_no: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(160),
+  year: z.number().int().min(1).max(4),
+  section: z.string().trim().min(1).max(20),
+  dept: z.string().trim().min(1).max(80).default("CSE-AIML"),
+  email: z.string().trim().email().max(254),
+  phone: z.string().trim().max(24).optional().nullable()
+});
+const createFacultySchema = z.object({
+  action: z.literal("user.createFaculty"),
+  name: z.string().trim().min(1).max(160),
+  email: z.string().trim().email().max(254),
+  employee_code: z.string().trim().max(40).optional().nullable(),
+  department: z.string().trim().min(1).max(80).default("CSE-AIML")
+});
+const assignmentSchema = z.object({
+  action: z.literal("assignment.create"),
+  faculty_user_id: z.string().uuid(),
+  subject_code: z.string().trim().min(1).max(40),
+  year: z.number().int().min(1).max(4),
+  section: z.string().trim().min(1).max(20),
+  dept: z.string().trim().min(1).max(80).default("CSE-AIML")
+});
+function createTemporaryPassword() {
+  return `Ca!${randomBytes(12).toString("base64url")}7A`;
+}
 
 const leaveSchema = z.object({
   action: z.literal("leave.create"),
@@ -194,6 +225,79 @@ export async function POST(request: Request) {
     const body = await request.json();
     const action = z.object({ action: z.string() }).safeParse(body);
     if (!action.success) return Response.json({ error: "Action is required" }, { status: 400 });
+
+    if (action.data.action === "user.createStudent") {
+      const actor = await requireRole(["hod"]);
+      const parsed = createStudentSchema.safeParse(body);
+      if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid student" }, { status: 400 });
+      const v = parsed.data;
+      const email = v.email.toLowerCase();
+      const tempPassword = createTemporaryPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
+      client = await pool.connect();
+      await client.query("BEGIN");
+      const duplicate = await client.query(`SELECT 1 FROM public.campus_users WHERE lower(email)=lower($1)
+        UNION ALL SELECT 1 FROM public.students WHERE lower(roll_no)=lower($2) LIMIT 1`, [email,v.roll_no]);
+      if (duplicate.rowCount) {
+        await client.query("ROLLBACK");
+        return Response.json({ error: "Email or roll number already exists" }, { status: 409 });
+      }
+      const student = await client.query(`INSERT INTO public.students(roll_no,name,year,section,dept,phone,status)
+        VALUES($1,$2,$3,$4,$5,$6,'active') RETURNING id,roll_no,name,year,section,dept`,
+        [v.roll_no,v.name,v.year,v.section,v.dept,v.phone || null]);
+      await client.query(`INSERT INTO public.campus_student_contacts(student_id,email,phone) VALUES($1,$2,$3)`,
+        [student.rows[0].id,email,v.phone || null]);
+      await client.query(`INSERT INTO public.campus_users(email,password_hash,role,student_id,active,must_change_password)
+        VALUES($1,$2,'student',$3,true,true)`, [email,passwordHash,student.rows[0].id]);
+      await client.query(`INSERT INTO public.campus_audit_logs(actor_user_id,action,entity_type,entity_id,metadata)
+        VALUES($1,'user.create_student','student',$2,jsonb_build_object('email',$3))`, [actor.id,student.rows[0].id,email]);
+      await client.query("COMMIT");
+      return Response.json({ student: student.rows[0], email, temporaryPassword: tempPassword, mustChangePassword: true }, { status: 201 });
+    }
+
+    if (action.data.action === "user.createFaculty") {
+      const actor = await requireRole(["hod"]);
+      const parsed = createFacultySchema.safeParse(body);
+      if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid faculty member" }, { status: 400 });
+      const v = parsed.data;
+      const email = v.email.toLowerCase();
+      const tempPassword = createTemporaryPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
+      client = await pool.connect();
+      await client.query("BEGIN");
+      const duplicate = await client.query(`SELECT 1 FROM public.campus_users WHERE lower(email)=lower($1)
+        UNION ALL SELECT 1 FROM public.faculty WHERE lower(email)=lower($1) LIMIT 1`, [email]);
+      if (duplicate.rowCount) {
+        await client.query("ROLLBACK");
+        return Response.json({ error: "Email already exists" }, { status: 409 });
+      }
+      const faculty = await client.query(`INSERT INTO public.faculty(employee_code,name,email,department,active)
+        VALUES($1,$2,$3,$4,true) RETURNING id,employee_code,name,email,department`,
+        [v.employee_code || null,v.name,email,v.department]);
+      await client.query(`INSERT INTO public.campus_users(email,password_hash,role,faculty_id,active,must_change_password)
+        VALUES($1,$2,'faculty',$3,true,true)`, [email,passwordHash,faculty.rows[0].id]);
+      await client.query(`INSERT INTO public.campus_audit_logs(actor_user_id,action,entity_type,entity_id,metadata)
+        VALUES($1,'user.create_faculty','faculty',$2,jsonb_build_object('email',$3))`, [actor.id,faculty.rows[0].id,email]);
+      await client.query("COMMIT");
+      return Response.json({ faculty: faculty.rows[0], email, temporaryPassword: tempPassword, mustChangePassword: true }, { status: 201 });
+    }
+
+    if (action.data.action === "assignment.create") {
+      const actor = await requireRole(["hod"]);
+      const parsed = assignmentSchema.safeParse(body);
+      if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Invalid faculty assignment" }, { status: 400 });
+      const v = parsed.data;
+      const faculty = await query(`SELECT id FROM public.campus_users WHERE id=$1 AND role='faculty' AND active=true`, [v.faculty_user_id]);
+      if (!faculty.rowCount) return Response.json({ error: "Select an active faculty account" }, { status: 400 });
+      const result = await query(`INSERT INTO public.campus_class_assignments(faculty_user_id,subject_code,year,section,dept,active)
+        VALUES($1,$2,$3,$4,$5,true) ON CONFLICT(faculty_user_id,subject_code,year,section,dept)
+        DO UPDATE SET active=true RETURNING id,faculty_user_id,subject_code,year,section,dept`,
+        [v.faculty_user_id,v.subject_code,v.year,v.section,v.dept]);
+      await query(`INSERT INTO public.campus_audit_logs(actor_user_id,action,entity_type,entity_id,metadata)
+        VALUES($1,'assignment.create','faculty_assignment',$2,jsonb_build_object('subject_code',$3,'year',$4,'section',$5))`,
+        [actor.id,result.rows[0].id,v.subject_code,v.year,v.section]);
+      return Response.json({ assignment: result.rows[0] }, { status: 201 });
+    }
 
     if (action.data.action === "leave.create") {
       const user = await requireRole(["student"]);
