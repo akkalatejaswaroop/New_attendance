@@ -488,6 +488,10 @@ export async function POST(request: Request) {
         await client.query("ROLLBACK");
         return Response.json({ error: "Session is not open" }, { status: 409 });
       }
+      if (new Date(session.closes_at).getTime() > Date.now()) {
+        await client.query("ROLLBACK");
+        return Response.json({ error: "This session cannot be finalized before its scheduled close time" }, { status: 409 });
+      }
       if (user.role === "faculty" && session.created_by !== user.id) {
         await client.query("ROLLBACK");
         return Response.json({ error: "Only the session creator or HOD can close it" }, { status: 403 });
@@ -503,12 +507,54 @@ export async function POST(request: Request) {
         FROM public.students st WHERE st.status='active' AND st.year=$3 AND st.section=$4 AND st.dept=$5
         ON CONFLICT(session_id,student_id) DO NOTHING`,
         [session.id,absentDate.rows[0].d,session.year,session.section,session.dept]);
-      await client.query(`INSERT INTO public.campus_fines(student_id,absent_date,amount_paise,reason,source_session_id,created_by)
-        SELECT a.student_id,$2::date,$3,'Unexcused absence', $1,$4
-        FROM public.campus_attendance a
-        WHERE a.session_id=$1 AND a.status='absent'
-        ON CONFLICT(student_id,absent_date) DO NOTHING`, [session.id,absentDate.rows[0].d,finePaise,user.id]);
       await client.query(`UPDATE public.campus_sessions SET status='closed' WHERE id=$1`, [session.id]);
+      await client.query(`INSERT INTO public.campus_fines(student_id,absent_date,amount_paise,reason,source_session_id,created_by)
+        SELECT st.id,$2::date,$3,'Unexcused full-day absence',$1,$4
+        FROM public.students st
+        WHERE st.status='active' AND st.year=$5 AND st.section=$6 AND st.dept=$7
+          AND EXISTS (
+            SELECT 1 FROM public.campus_attendance a JOIN public.campus_sessions sx ON sx.id=a.session_id
+            WHERE a.student_id=st.id AND a.status='absent'
+              AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date
+              AND sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM public.campus_sessions sx
+            WHERE sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
+              AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date AND sx.status='open'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM public.campus_attendance a JOIN public.campus_sessions sx ON sx.id=a.session_id
+            WHERE a.student_id=st.id AND a.status IN ('present','excused')
+              AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date
+              AND sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM public.campus_leave_requests l
+            WHERE l.student_id=st.id AND l.status='approved' AND l.from_date <= $2::date AND l.to_date >= $2::date
+          )
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM public.campus_timetable t
+              WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
+                AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
+                AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
+            )
+            OR NOT EXISTS (
+              SELECT 1 FROM public.campus_timetable t
+              WHERE t.active=true AND t.year=st.year AND t.section=st.section AND t.dept=st.dept
+                AND t.day_of_week=EXTRACT(DOW FROM $2::date)::int
+                AND t.effective_from <= $2::date AND COALESCE(t.effective_until,'infinity'::date) >= $2::date
+                AND NOT EXISTS (
+                  SELECT 1 FROM public.campus_sessions sx
+                  WHERE sx.year=st.year AND sx.section=st.section AND sx.dept=st.dept
+                    AND sx.subject_code=t.subject_code
+                    AND (sx.opens_at AT TIME ZONE 'Asia/Kolkata')::date=$2::date AND sx.status='closed'
+                )
+            )
+          )
+        ON CONFLICT(student_id,absent_date) DO NOTHING`,
+        [session.id,absentDate.rows[0].d,finePaise,user.id,session.year,session.section,session.dept]);
       await client.query(`INSERT INTO public.campus_audit_logs(actor_user_id,action,entity_type,entity_id,metadata)
         VALUES($1,'session.close','attendance_session',$2,jsonb_build_object('absent_date',$3::text,'fine_paise',$4))`,
         [user.id,session.id,absentDate.rows[0].d,finePaise]);
