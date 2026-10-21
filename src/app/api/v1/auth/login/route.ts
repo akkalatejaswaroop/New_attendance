@@ -1,4 +1,4 @@
-import argon2 from "argon2";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { query } from "@/lib/db";
 import { createSession } from "@/lib/auth";
@@ -19,8 +19,8 @@ export async function POST(request: Request) {
        FROM public.campus_users WHERE lower(email)=lower($1) LIMIT 1`, [body.email]
     );
     const user = result.rows[0];
-    // Keep the same outward error for unknown email and wrong password.
-    if (!user || !user.active || !(await argon2.verify(user.password_hash, body.password).catch(()=>false))) {
+    // This deployment uses bcrypt hashes, avoiding native binary dependencies.
+    if (!user || !user.active || !(await bcrypt.compare(body.password, user.password_hash).catch(()=>false))) {
       return Response.json({ error: "Invalid email or password" }, { status: 401 });
     }
     await createSession(user);
