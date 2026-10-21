@@ -22,3 +22,55 @@ label { display:block; font-weight:600; font-size:14px; }
 .password-field .password-toggle { position:absolute; right:7px; top:50%; transform:translateY(-70%); display:flex; align-items:center; justify-content:center; width:38px; height:38px; padding:8px; border-radius:8px; background:transparent; color:#475569; }
 .password-field .password-toggle:hover { background:#f1f5f9; }
 .password-field .password-toggle:focus-visible { outline:2px solid var(--orange); outline-offset:2px; }
+
+/* Role-specific CampusAttend dashboard */
+.dashboard { max-width: 1280px; }
+.dash-top { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:24px; }
+.dash-title { font-size:clamp(30px,4vw,44px); margin:14px 0 8px; }
+.secondary-button { background:#172033; color:#fff; }
+.dash-tabs { display:flex; gap:8px; overflow-x:auto; padding:8px 0 14px; margin:8px 0 16px; border-bottom:1px solid var(--line); }
+.tab { flex:0 0 auto; background:transparent; color:#475569; border:1px solid transparent; }
+.tab.active { color:#9a3412; background:#fff1e6; border-color:#fed7aa; }
+.metric-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin:20px 0; }
+.metric { display:flex; flex-direction:column; gap:12px; }
+.metric span { color:var(--muted); font-size:14px; }
+.metric strong { font-size:clamp(24px,3vw,34px); letter-spacing:-.04em; }
+.wide { grid-column:1 / -1; }
+.action-list { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.action-list button { font-size:13px; padding:10px 12px; }
+.notice { position:relative; padding:14px 44px 14px 16px; border:1px solid #fed7aa; border-radius:12px; background:#fff7ed; color:#9a3412; margin:16px 0; }
+.notice.success { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
+.notice-close { position:absolute; right:8px; top:6px; background:transparent; color:inherit; font-size:22px; padding:4px 8px; }
+.table-wrap { overflow-x:auto; width:100%; margin:14px 0; }
+table { width:100%; border-collapse:collapse; font-size:14px; min-width:560px; }
+th,td { text-align:left; padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:#475569; background:#fffaf5; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+td { color:#334155; }
+.status { display:inline-flex; border-radius:999px; padding:5px 9px; font-size:12px; font-weight:700; background:#f1f5f9; color:#334155; text-transform:capitalize; }
+.status.present,.status.approved,.status.paid { background:#dcfce7; color:#166534; }
+.status.absent,.status.rejected,.status.unpaid { background:#fee2e2; color:#991b1b; }
+.status.excused,.status.pending { background:#fef3c7; color:#92400e; }
+.list-row { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px 0; border-bottom:1px solid var(--line); }
+.list-row:last-child { border-bottom:0; }
+.list-row p { margin:5px 0; }
+.session-list { display:grid; gap:12px; }
+.session-card { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,1fr); gap:20px; align-items:center; border:1px solid var(--line); padding:16px; border-radius:14px; }
+.session-card p { margin:5px 0; }
+.session-card form { display:flex; align-items:flex-end; gap:12px; }
+.session-card label { flex:1; }
+.session-card input { margin-bottom:0; }
+.qr-panel { margin-top:20px; padding:20px; border:1px solid #fed7aa; border-radius:16px; background:#fffaf5; max-width:360px; }
+.qr-panel img { display:block; max-width:100%; height:auto; margin:12px auto; }
+.qr-panel h3 { margin-top:0; }
+textarea { width:100%; border:1px solid #cbd5e1; border-radius:10px; padding:12px; font:inherit; margin:6px 0 14px; resize:vertical; }
+form { margin:0; }
+form label { margin-top:6px; }
+.dash-footer { border-top:1px solid var(--line); padding-top:18px; margin-top:30px; }
+@media (max-width:720px) {
+  .dash-top { flex-direction:column; }
+  .session-card { grid-template-columns:1fr; }
+  .session-card form { display:block; }
+  .list-row { align-items:flex-start; flex-direction:column; }
+  .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dashboard { padding:24px 14px 44px; }
+}
